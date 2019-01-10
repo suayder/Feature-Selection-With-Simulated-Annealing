@@ -1,54 +1,70 @@
-#include <iostream>
 #include <time.h>
+#include<iostream>
 #include "knn.hpp"
 
 using namespace std;
 
-struct sol{
+typedef struct sol{
     double fitness;
-    bitset<ATTRIBUTES-1> attributes;
+    vector<bool> attributes;
 
-    sol(double f, bitset<ATTRIBUTES-1> att){
+    sol(double f, vector<bool> att){
         fitness = f;
         attributes = att;
     }
-};
+} _sol;
 
 auto fitness = [](double classifier_error, int cardinality, int features, double alpha){
         return (alpha*classifier_error)+(1.0-alpha)*(cardinality/features);
     };
 
-sol generate_new(int **);
-sol generate_near(int **, bitset<ATTRIBUTES-1>&);
+auto count_bits = [](vector<bool>& v){
+        int cont = 0;
+        for(auto it:v)
+            if(it==true)
+                cont++;
+
+        return cont;
+    };
+
+_sol generate_new(unsigned int , Knn<>&);
+_sol generate_near(int , vector<bool>&, Knn<>&);
 
 int main(int argc, char const *argv[])
 {
     srand(time(NULL));
 
-    int** data;
-    data = readData(PATH, ATTRIBUTES, INSTANCES);
+    if(argc!=2){
+        cout<<"run like this: \' ./a.out dataset_name \'"<<endl;
+        exit(0);
+    }
+    T_data data(argv[1]);
 
-    double t0 = 2*(ATTRIBUTES-1),t = 3000*t0; //temperature
+    Knn<> knn_classifier(&data);
 
-    sol si = generate_new(data);
-    sol best_sol = si;//best_sol(fitness(evaluate(selected_features, data), selected_features.count(), ATTRIBUTES-1, 0.99),selected_features);
+    double t0 = 2*(data.n_attribute),t = 3000*t0; //temperature
 
-    cout << "ERROR RATE: " << evaluate(best_sol.attributes, data)<<endl;
-    cout << "BEST SOL: " << best_sol.fitness<<endl;
-    cout << "SELECTED ATT: "<<best_sol.attributes<<endl;
+    _sol si = generate_new(data.n_attribute, knn_classifier);
+    _sol best_sol = si;//best_sol(fitness(evaluate(selected_features, data), selected_features.count(), ATTRIBUTES-1, 0.99),selected_features);
+
+    cout << "ERROR RATE: " << knn_classifier.evaluate(best_sol.attributes)<<endl;
+    cout << "SELECTED ATT: " << best_sol.fitness<<endl;
+    for(auto it = best_sol.attributes.begin(); it != best_sol.attributes.end(); it++)
+        cout << *it;
+    cout<<endl;
 
     int count_iter = 0;
     ofstream file_save("result.dat");
     while(t>t0){
 
         file_save<<si.fitness<<" "<<count_iter<<endl;
-        sol trial_solution = generate_near(data, si.attributes); //Generate in the neighbor
+        _sol trial_solution = generate_near(data.n_attribute, si.attributes, knn_classifier); //Generate in the neighbor
         if(trial_solution.fitness<best_sol.fitness){
             si = trial_solution;
             best_sol = trial_solution;
         }
         else if(trial_solution.fitness==best_sol.fitness){
-            if(trial_solution.attributes.count()<trial_solution.attributes.count()){
+            if(count_bits(trial_solution.attributes)<count_bits(trial_solution.attributes)){
                 si = trial_solution;
                 best_sol = trial_solution;
             }
@@ -63,41 +79,49 @@ int main(int argc, char const *argv[])
         t=0.97*t; //update temperature
         count_iter++;
     }
-    cout << "ERROR RATE: " << evaluate(best_sol.attributes, data)<<endl;
+    cout << "ERROR RATE: " << knn_classifier.evaluate(best_sol.attributes)<<endl;
     cout << "BEST SOL: " << best_sol.fitness<<endl;
-    cout << "SELECTED ATT: "<<best_sol.attributes<<endl;
+    cout << "SELECTED ATT: ";
+    for(auto it = best_sol.attributes.begin(); it != best_sol.attributes.end(); it++)
+        cout << *it;
+    cout<<endl;
+
 
     file_save.close();
     system ("gnuplot -p chart.gnu");
     return 0;
 }
 
-sol generate_new(int **data){
+_sol generate_new(unsigned int n_attribute, Knn<>& knn_classifier){
     
-    bitset<ATTRIBUTES-1> selected_features;
+    vector<bool> selected_features;
+    do{ //ensure that vector generated will not have all values equals to zero
+        for(unsigned int i =0; i<n_attribute; i++) //Initialize a random features selected
+            selected_features.push_back((rand()%10<5)?0:1);
+    }while(count_bits(selected_features)==0);
     
-    do{
-        for(int i =0; i<ATTRIBUTES; i++) //Initialize a random features selected
-            selected_features[i] = (rand()%10<5)?0:1;
-    }while(selected_features.count()==0);
-
-    return sol (fitness(evaluate(selected_features, data), selected_features.count(), 699, 0.99),selected_features);
+    return _sol(fitness(knn_classifier.evaluate(selected_features), count_bits(selected_features), 699, 0.93),selected_features);
     //return sol(evaluate(selected_features, data), selected_features);
 
 }
 
-sol generate_near(int **data, bitset<ATTRIBUTES-1>& features){
+_sol generate_near(int n_attribute, vector<bool>& features, Knn<>& knn_classifier){
     
-    int q = rand()%(ATTRIBUTES-1);
+    int q = rand()%(n_attribute);
+
+    auto flip = [&features](int id){
+        features[id] = (features[id]==0)?features[id]=1:features[id]=0;
+    };
+
     do{
         for(int i =0; i<q; i++){ //Initialize a random features selected
             srand(clock());
-            int index = rand()%(ATTRIBUTES-1);
-            cout<<index<<endl;
-            features.flip(index);
+            int index = rand()%(n_attribute);
+            //cout<<index<<endl;
+            flip(index);
         }
-    }while(features.count()<features.size()*0.2);
+    }while(count_bits(features)<features.size()*0.2);
 
-    return sol (fitness(evaluate(features, data), features.count(), 699, 0.99),features);
+    return _sol (fitness(knn_classifier.evaluate(features), count_bits(features), 699, 0.99),features);
     //return sol(evaluate(selected_features, data), selected_features);
 }
